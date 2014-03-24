@@ -1,0 +1,472 @@
+#!/usr/bin/perl
+
+#
+# Copyright 2014, Christopher Layne <clayne@anodized.com>
+#
+
+use Getopt::Long qw(:config no_ignore_case no_auto_abbrev bundling);
+use LWP::UserAgent;
+use LWP::ConnCache;
+use Data::Dumper;
+use Carp qw(confess);
+
+use warnings FATAL => qw(all);
+use strict;
+
+local $SIG{__DIE__} = \&confess;
+
+# XXX: Fix this
+my $user = getpwuid($>);
+my $file_tmp = "/tmp/$user.massdev.tmp";
+my $file_out = "/tmp/$user.massdev.out";
+
+# XXX: Not actually used
+my $film_tab = [
+	'Adox CHM',
+	'Adox CHS',
+	'Adox CMS',
+	'Adox Ort 25',
+	'Adox Pan 25',
+	'Adox Silvermax',
+	'APX 100',
+	'APX 400',
+	'Copex',
+	'Scala',
+	'Aviphot',
+	'Argenti',
+	'Arista EDU',
+	'Arista II',
+	'Arista Premium',
+	'BPF',
+	'Bluefire',
+	'Earl Grey',
+	'Eastman',
+	'Efke 25',
+	'Efke 50',
+	'Efke 100',
+	'Efke IR820',
+	'ERA',
+	'Fomapan 100',
+	'Fomapan 200',
+	'Fomapan 400',
+	'Fortepan',
+	'Fuji HR-T30',
+	'Neopan 100 Acros',
+	'Neopan 100ss',
+	'Neopan 400',
+	'Neopan 1600',
+	'Holga 400',
+	'Pan F',
+	'FP4',
+	'HP5',
+	'Delta 100',
+	'Delta 400',
+	'Delta 3200',
+	'SFX',
+	'Ilford Pan',
+	'SP816T',
+	'Surveillance',
+	'Ortho',
+	'XP2',
+	'Kentmere',
+	'Plus-X',
+	'Tri-X 400',
+	'Tri-X 320',
+	'HIE',
+	'TMax 100',
+	'TMax 400',
+	'TMax P3200',
+	'BW400CN',
+	'Lady Grey',
+	'Legacy Pro',
+	'SHD',
+	'Maco',
+	'Orca',
+	'Orwo',
+	'Polypan',
+	'Pro Max',
+	'Rollei AT',
+	'Rollei Blackbird',
+	'Rollei Infrared',
+	'Rollei Ortho',
+	'Rollei Pan',
+	'Rollei R3',
+	'%Retro 100%',
+	'Rollei Retro 400',
+	'Rollei Retro 80S',
+	'Rollei Retro 400S',
+	'Rollei RPX 25',
+	'Rollei RPX 100',
+	'Rollei RPX 400',
+	'Rollei Superpan 200',
+	'Rollei Universal 200',
+	'Shanghai',
+	'Svema',
+	'Tasma',
+	'Ultrafine',
+];
+
+# XXX: Not actually used
+my $dev_tab = [
+	'510-Pyro',
+	'777',
+	'Atomal 49',
+	'ACU-1',
+	'Acufine',
+	'Aculux',
+	'Acurol-N',
+	'ADX',
+	'Adonal',
+	'Amaloco',
+	'APH 09',
+	'Argenti',
+	'Arista',
+	'Atomal 49',
+	'Beutler',
+	'Bluefire',
+	'Burton',
+	'BW-TNEG',
+	'C-41',
+	'Caffenol',
+	'CP',
+	'D-19',
+	'D-23',
+	'D-76',
+	'D74',
+	'DK-50',
+	'DK-76',
+	'Dektol',
+	'Diafine',
+	'DiXactol',
+	'Dokumol',
+	'DS-10',
+	'ecopro',
+	'Efke FR-16',
+	'Emofin',
+	'Ethol',
+	'Extend',
+	'FA-1027',
+	'F60',
+	'F76',
+	'FD10',
+	'FG7',
+	'Fino',
+	'Finol',
+	'Foma',
+	'Fujidol',
+	'FX-1',
+	'FX-2',
+	'FX-4',
+	'FX5',
+	'FX-15',
+	'FX-19',
+	'FX-37',
+	'FX-39',
+	'FX-55',
+	'Gamma Plus',
+	'Gradual',
+	'Heico OS',
+	'HC-110',
+	'Hypercat',
+	'ID-11',
+	'ID-68',
+	'Ilfosol 3',
+	'Ilfosol S',
+	'Ilfotec DD',
+	'Ilfotec HC',
+	'Ilfotec LC29',
+	'Lauder',
+	'LP',
+	'Meritol-Metol',
+	'Metolal',
+	'Microdol-X',
+	'Fuji Microfine',
+	'Microphen',
+	'MZB',
+	'Neofin Blue',
+	'Neopress HC',
+	'Neotenal',
+	'Neutol',
+	'Nucleol',
+	'Obsidian',
+	'Ornano',
+	'Pandol',
+	'PC-TEA',
+	'Perceptol',
+	'PMK',
+	'POTA',
+	'Prescysol',
+	'Promicrol',
+	'Pyrocat',
+	'Refinal',
+	'R09',
+	'Rodinal',
+	'RodinalSpecial',
+	'Rollei',
+	'Rollo Pyro',
+	'Romek',
+	'Sensidol',
+	'Silvermax',
+	'SPD',
+	'Sprint',
+	'Acurol-N',
+	'Spur 2525',
+	'Spur HRX%',
+	'Spur SLD',
+	'Spursinn',
+	'Studional',
+	'Suprol',
+	'Tanol',
+	'TD-3',
+	'Technidol',
+	'TechXactol',
+	'TFX-2',
+	'TMax Dev',
+	'TMax RS',
+	'Tofen',
+	'Trepan 1200T',
+	'Ultrafin',
+	'Ultrafine',
+	'Uncle%',
+	'WD2D',
+	'Xtol',
+];
+
+my $all;
+my $dev = [];
+my $film = [];
+my $debug = 0;
+my $help = 0;
+
+my $conn_cache = LWP::ConnCache->new;
+$conn_cache->total_capacity([1]);
+
+sub mdc_req {
+	my ($film, $dev, $all) = @_;
+
+	my $content;
+	my @stat = stat($file_tmp);
+	if (!$all || !$stat[7] || !$stat[9] || $stat[9] < (time - 86400)) {
+		if ($all) {
+			$content = __mdc_req(undef, undef, 1);
+		} else {
+			foreach my $film (scalar keys %$film ? keys %$film : '') {
+				foreach my $dev (scalar keys %$dev ? keys %$dev : '') {
+					print STDERR Dumper['req',$film,$dev] if ($debug);
+					$content .= __mdc_req($film, $dev, 0);
+				}
+			}
+		}
+
+		open(FD, "> $file_tmp") or die "open: $!";
+		print FD $content;
+		close(FD);
+	} else {
+		open(FD, "< $file_tmp") or die "open: $!";
+		read(FD, $content, 12345678) or die "read: $!"; # XXX: cheesy, fix
+		close(FD);
+	}
+
+	# Convert any <td>value</td> fields to <td>|value|</td> so that empty fields are
+	# not lost post html2text.
+	$content =~ s#<td class='([^']+)'>(?:<a href=[^>]+>)?([^<]*)(?:</a>)?</td>#<td class='$1'>|$2|</td>#g;
+
+	return $content;
+}
+
+sub __mdc_req {
+	my ($film, $dev, $all) = @_;
+
+	# Use connection caching if multiple http request happen.
+	my $ua = LWP::UserAgent->new;
+	$ua->conn_cache($conn_cache);
+
+	# Create a request
+	my $req = $all
+		? HTTP::Request->new(POST => "http://www.digitaltruth.com/devchart.php?Film=%&Developer=%&mdc=Search")
+		: HTTP::Request->new(POST => "http://www.digitaltruth.com/chart/search_text.php?Film=$film%&Developer=$dev%");
+	#$req->content_type('application/x-www-form-urlencoded');
+
+	# Pass request to the user agent and get a response back
+	my $res = $ua->request($req);
+
+	# Check the outcome of the response
+	if (!$res->is_success) {
+		print $res->status_line, "\n";
+		exit -1;
+	}
+
+	return $res->content;
+}
+
+sub mdc_get {
+	my ($film, $dev, $all) = @_;
+	my $res;
+
+	my @stat = stat($file_out);
+	if (!$all || !$stat[7] || !$stat[9] || $stat[9] < (time - 86400)) {
+		my $content = mdc_req($film, $dev, $all);
+
+		# Ugly, but necessary until MDC gives us JSON
+		open(FD, "|html2text -width 200 -ascii > $file_out") or die "open: $!";
+		print FD $content;
+		close FD;
+	}
+
+	open(FD, "< $file_out") or die "open: $!";
+	while (<FD>) {
+		chomp;
+
+		# |Neopan 1600|      |Xtol|    |1+2|    |200|     |7|     ||      ||    |20C| ||
+		# |Neopan 100 Acros| |Xtol|    |1+1|    |200|     |13|    |13|    |13|  |20C| |[15]|
+		my @a = /\|([^|]*)\|/g or next;
+
+		# default ei range
+		$a[3] = "$a[3]-$a[3]" if (defined $a[3] && index($a[3], '-') < 0);
+
+		# convert stock to 1+0
+		$a[2] =~ s/stock/1+0/g;
+
+		my $r = {
+			'film' => lc $a[0],
+			'dev' => lc $a[1],
+			'dilution' => $a[2],
+			'ei' => [ split(/-/, $a[3]) ],
+			'time_sf' => $a[4],
+			'time_mf' => $a[5],
+			'time_lf' => $a[6],
+			'temp' => lc $a[7],
+			'notes' => $a[8]
+		};
+
+		my ($f_ret, $d_ret) = (!scalar keys %$film, !scalar keys %$dev);
+
+		foreach (grep +(!index($r->{'film'}, $_, 0)), keys %$film) {
+			my $f = $film->{$_};
+			if ($f->{'ei'} && $r->{'ei'}) {
+				# Ranges parsed as "-high", "low-" will be undef on the
+				# low and high sides respectively. Ranges parsed as an
+				# exact number will be synthesized as "number-number". As
+				# such there is never a risk of undef not meaning "beyond
+				# the bounds in a given direction" hence undef values are
+				# converted to sentinel values at the extreme ends to reduce
+				# syntactic noise in the range overlap comparison.
+				my ($f_lo, $f_hi) = ($f->{'ei'}[0] || 0, $f->{'ei'}[1] || 1024768);
+				my ($r_lo, $r_hi) = ($r->{'ei'}[0] || 0, $r->{'ei'}[1] || 1024768);
+
+				# Ranges overlap if true: (f_lo <= r_hi && r_lo <= f_hi)
+				next unless ($f_lo <= $r_hi && $r_lo <= $f_hi);
+			}
+
+			$f_ret++; last;
+		}
+		next unless ($f_ret);
+
+		foreach (grep +(!index($r->{'dev'}, $_, 0)), keys %$dev) {
+			my $d = $dev->{$_};
+			if ($d->{'dilution'} && $r->{'dilution'}) {
+				# XXX: Ranges not handled here due to various formatting
+				# reasons (not all dilutions are straight numbers which
+				# could be converted to floating point).
+				my ($d_lo, $d_hi) = @{$d->{'dilution'}};
+				my ($r_lo, $r_hi) = ($r->{'dilution'}, $r->{'dilution'});
+
+				next if ($d_lo && $r_lo && $r_lo ne $d_lo);
+				next if ($d_hi && $r_hi && $r_hi ne $d_hi);
+			}
+
+			$d_ret++; last;
+		}
+		next unless ($d_ret);
+
+		push @$res, $r;
+	}
+	close(FD);
+
+	return $res;
+}
+
+# Sort by developer -> dilution -> time -> film
+sub film_sort {
+	no warnings;
+	my ($da, $db) = ($a->{'dilution'}, $b->{'dilution'});
+	my @da = split(/[:+]/, $da);
+	my @db = split(/[:+]/, $db);
+	my $ta = $a->{'time_sf'} || $a->{'time_mf'} || $a->{'time_lf'};
+	my $tb = $b->{'time_sf'} || $b->{'time_mf'} || $b->{'time_lf'};
+
+	# Remove any special characters from time ranges (e.g. time1+time2, time1-time2)
+	$ta =~ s#[+-].*##g;
+	$tb =~ s#[+-].*##g;
+
+	$a->{'dev'} cmp $b->{'dev'}
+		||
+	((!$da[0] && -1) || (!$db[0] && 1))
+		||
+	$da[0] <=> $db[0]
+		||
+	$da[1] <=> $db[1]
+		||
+	$ta <=> $tb
+		||
+	$a->{'film'} cmp $b->{'film'};
+}
+
+# XXX: Actually document this stuff with pod2usage
+GetOptions(
+	'help'  => \$help,
+	'a|all' => \$all,
+	'g|debug' => \$debug,
+	'd|dev=s@' => \$dev,
+) && !$help && (scalar @$dev || scalar @ARGV) || exit -1;
+
+# Convert film arguments to a hash of film options.
+$film = +{
+	map {
+		if (defined $_->[1]) {
+			$_->[1] = "$_->[1]-$_->[1]" if (index($_->[1], '-') < 0);
+		}
+		$_->[0] => {
+			'film' => $_->[0],
+			'ei' => defined $_->[1] && [ split(/-/, $_->[1]) ]
+		}
+	} map [ split(/:/,$_) ], map split(/,/, $_), @ARGV
+};
+
+# Convert dev arguments to a hash of dev options.
+$dev = +{
+	map {
+		if (defined $_->[1]) {
+			$_->[1] =~ s/stock/1+0/g;
+			$_->[1] = "$_->[1]-$_->[1]" if (index($_->[1], '-') < 0);
+		}
+		$_->[0] => {
+			'dev' => $_->[0],
+			'dilution' => defined $_->[1] && [ split(/-/, $_->[1]) ]
+		}
+	} map [ split(/:/,$_) ], map split(/,/, $_), @$dev
+};
+
+if ($debug) {
+	print STDERR Dumper ['film',$film];
+	print STDERR Dumper ['dev',$dev];
+}
+
+my $res = mdc_get($film, $dev, $all) || exit -1;
+my $n = 0;
+my %seen;
+
+printf STDERR ("%-24s %12s %24s %8s %8s %8s %8s %8s %s\n", '# dev', 'dil', 'film', 'ei', 'time_sf', 'time_mf', 'time_lf', 'temp', 'notes') if (@$res);
+foreach my $r (sort film_sort @$res) {
+	printf("%s%-24s %12s %24s %8s %8s %8s %8s %8s %s\n",
+		(!$seen{"$r->{'dev'} $r->{'dilution'}"}++ && $n++) ? "\n" : "",
+		$r->{'dev'},
+		$r->{'dilution'} eq '1+0' ? 'stock' : $r->{'dilution'},
+		$r->{'film'},
+		$r->{'ei'}[0] eq $r->{'ei'}[1] ? $r->{'ei'}[0] : join('-',@{$r->{'ei'}}),
+		$r->{'time_sf'},
+		$r->{'time_mf'},
+		$r->{'time_lf'},
+		$r->{'temp'},
+		$r->{'notes'} || '');
+}
