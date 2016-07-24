@@ -235,8 +235,12 @@ my $dev_tab = [
 my $all;
 my $dev = [];
 my $film = [];
+my $hgram = 0;
+my $shgram = 0;
+my $cache = 0;
 my $debug = 0;
 my $help = 0;
+my $variance = 7;
 
 my $conn_cache = LWP::ConnCache->new;
 $conn_cache->total_capacity([1]);
@@ -304,7 +308,7 @@ sub mdc_get {
 	my $res;
 
 	my @stat = stat($file_out);
-	if (!$all || !$stat[7] || !$stat[9] || $stat[9] < (time - 86400)) {
+	if (!$cache && (!$all || !$stat[7] || !$stat[9] || $stat[9] < (time - 86400))) {
 		my $content = mdc_req($film, $dev, $all);
 
 		# Ugly, but necessary until MDC gives us JSON
@@ -417,6 +421,10 @@ GetOptions(
 	'help'  => \$help,
 	'a|all' => \$all,
 	'g|debug' => \$debug,
+	'c|cache' => \$cache,
+	'hgram' => \$hgram,
+	'shgram' => \$shgram,
+	'variance=i' => \$variance,
 	'd|dev=s@' => \$dev,
 ) && !$help && (scalar @$dev || scalar @ARGV) || exit -1;
 
@@ -430,7 +438,7 @@ $film = +{
 			'film' => $_->[0],
 			'ei' => defined $_->[1] && [ split(/-/, $_->[1]) ]
 		}
-	} map [ split(/:/,$_) ], map split(/,/, $_), @ARGV
+	} map [ split(/:/, $_) ], map split(/,/, $_), @ARGV
 };
 
 # Convert dev arguments to a hash of dev options.
@@ -444,7 +452,7 @@ $dev = +{
 			'dev' => $_->[0],
 			'dilution' => defined $_->[1] && [ split(/-/, $_->[1]) ]
 		}
-	} map [ split(/:/,$_) ], map split(/,/, $_), @$dev
+	} map [ split(/:/, $_) ], map split(/,/, $_), @$dev
 };
 
 if ($debug) {
@@ -453,20 +461,80 @@ if ($debug) {
 }
 
 my $res = mdc_get($film, $dev, $all) || exit -1;
-my $n = 0;
-my %seen;
 
-printf STDERR ("%-24s %12s %24s %8s %8s %8s %8s %8s %s\n", '# dev', 'dil', 'film', 'ei', 'time_sf', 'time_mf', 'time_lf', 'temp', 'notes') if (@$res);
+my (%seen, $sres);
+my ($n, $si, $sr_max) = (0, 0, 0);
 foreach my $r (sort film_sort @$res) {
-	printf("%s%-24s %12s %24s %8s %8s %8s %8s %8s %s\n",
-		(!$seen{"$r->{'dev'} $r->{'dilution'}"}++ && $n++) ? "\n" : "",
-		$r->{'dev'},
-		$r->{'dilution'} eq '1+0' ? 'stock' : $r->{'dilution'},
-		$r->{'film'},
-		$r->{'ei'}[0] eq $r->{'ei'}[1] ? $r->{'ei'}[0] : join('-',@{$r->{'ei'}}),
-		$r->{'time_sf'},
-		$r->{'time_mf'},
-		$r->{'time_lf'},
-		$r->{'temp'},
-		$r->{'notes'} || '');
+	$si++ if (!$seen{"$r->{'dev'}:$r->{'dilution'}"}++ && $sres);
+	push @{$sres->[$si]}, $r;
+
+	my $c = scalar @{$sres->[$si]};
+	$sr_max = $c if ($shgram && $c > $sr_max);
+}
+
+my $hgram_len = $hgram ? 20 : 0;
+my (@hg, %srhg);
+
+printf STDERR ("%-24s %12s %24s %8s %*.*s %*.*s %8s %8s %8s %8s %s\n", '# dev', 'dil', 'film', 'ei', $sr_max, $sr_max, 'time_shg', $hgram_len, $hgram_len, 'time_hg', 'time_sf', 'time_mf', 'time_lf', 'temp', 'notes') if (@$res);
+
+foreach my $sr (@$sres) {
+	for (my $i = 0; $i < scalar @$sr; $i++) {
+		next unless ($shgram);
+		foreach my $tkey (qw(time_sf)) {
+			my $nonself = 0;
+			$srhg{$tkey}[$i] = [ split(//, ' ' x $sr_max) ];
+			for (my $j = 0; $j < scalar @$sr; $j++) {
+				(my $ti = $sr->[$i]{$tkey} || next) =~ s#[+-].*##g;
+				(my $tj = $sr->[$j]{$tkey} || next) =~ s#[+-].*##g;
+
+				# Percentage growth (not contraction) in any given direction.
+				my $v = abs (100 - (int (100.0 * ($ti < $tj ? $ti / $tj : $tj / $ti))));
+#				print STDERR "$i $j $tkey $ti $tj $v\n";
+
+				if ($i == $j) {
+					$srhg{$tkey}[$i][$j] = '*';
+				} elsif ($v <= $variance) {
+					$srhg{$tkey}[$i][$j] = '|' ;
+					$nonself++;
+				}
+			}
+
+			# If nothing else tied to this row, blank it.
+			$srhg{$tkey}[$i][$i] = ' ' unless ($nonself);
+		}
+	}
+
+	for (my $i = 0; $i < scalar @$sr; $i++) {
+		my $r = $sr->[$i];
+		my ($srhg, $hg) = ('', '');
+
+		if ($shgram) {
+			$srhg = sprintf("%*.*s\n", $sr_max, $sr_max, join('', @{$srhg{'time_sf'}[$i]}));
+		}
+		if ($hgram) {
+			my @hg = split(//, ' ' x $hgram_len);
+			foreach ([ 'time_lf', 'l' ], [ 'time_mf', 'm' ], [ 'time_sf', '*' ]) {
+				my $hv = $r->{$_->[0]} || next;
+				$hg[int $hv] = $_->[1] if ($hv >= 0 && $hv < $hgram_len);
+			}
+			$hg = join('', @hg);
+		}
+
+		printf("%-24s %12s %24s %8s %*.*s %*.*s %8s %8s %8s %8s %s\n",
+			$r->{'dev'},
+			$r->{'dilution'} eq '1+0' ? 'stock' : $r->{'dilution'},
+			$r->{'film'},
+			$r->{'ei'}[0] eq $r->{'ei'}[1] ? $r->{'ei'}[0] : join('-',@{$r->{'ei'}}),
+			$sr_max, $sr_max, $srhg,
+			$hgram_len, $hgram_len, $hg,
+			$r->{'time_sf'},
+			$r->{'time_mf'},
+			$r->{'time_lf'},
+#			$r->{'time_sf'} && join(':', int($r->{'time_sf'} * 60 / 60), sprintf("%02d", ($r->{'time_sf'} * 60) % 60)),
+#			$r->{'time_mf'} && join(':', int($r->{'time_mf'} * 60 / 60), sprintf("%02d", ($r->{'time_mf'} * 60) % 60)),
+#			$r->{'time_lf'} && join(':', int($r->{'time_lf'} * 60 / 60), sprintf("%02d", ($r->{'time_lf'} * 60) % 60)),
+			$r->{'temp'},
+			$r->{'notes'} || '');
+	}
+	print "\n";
 }
