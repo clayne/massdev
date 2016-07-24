@@ -346,7 +346,7 @@ sub mdc_get {
 
 		my ($f_ret, $d_ret) = (!scalar keys %$film, !scalar keys %$dev);
 
-		foreach (grep +(!index($r->{'film'}, $_, 0)), keys %$film) {
+		foreach (grep +(!index(($r->{'film'} =~ tr/ _-//dr), ($_ =~ tr/ _-//dr), 0)), keys %$film) {
 			my $f = $film->{$_};
 			if ($f->{'ei'} && $r->{'ei'}) {
 				# Ranges parsed as "-high", "low-" will be undef on the
@@ -368,7 +368,7 @@ sub mdc_get {
 		}
 		next unless ($f_ret);
 
-		foreach (grep +(!index($r->{'dev'}, $_, 0)), keys %$dev) {
+		foreach (grep +(!index(($r->{'dev'} =~ tr/ _-//dr), ($_ =~ tr/ _-//dr), 0)), keys %$dev) {
 			my $d = $dev->{$_};
 			if ($d->{'dilution'} && $r->{'dilution'}) {
 				# XXX: Ranges not handled here due to various formatting
