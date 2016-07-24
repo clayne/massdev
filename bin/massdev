@@ -9,6 +9,7 @@ use LWP::UserAgent;
 use LWP::ConnCache;
 use Data::Dumper;
 use Carp qw(confess);
+use Scalar::Util qw(looks_like_number);
 
 use warnings FATAL => qw(all);
 use strict;
@@ -359,6 +360,7 @@ sub mdc_get {
 				my ($r_lo, $r_hi) = ($r->{'ei'}[0] || 0, $r->{'ei'}[1] || 1024768);
 
 				# Ranges overlap if true: (f_lo <= r_hi && r_lo <= f_hi)
+				next unless (!grep !looks_like_number($_), $f_lo, $f_hi, $r_lo, $r_hi);
 				next unless ($f_lo <= $r_hi && $r_lo <= $f_hi);
 			}
 
