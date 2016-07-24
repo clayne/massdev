@@ -233,7 +233,7 @@ my $dev_tab = [
 	'Xtol',
 ];
 
-my $all;
+my $all = 1;
 my $dev = [];
 my $film = [];
 my $hgram = 0;
